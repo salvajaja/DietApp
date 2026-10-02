@@ -133,7 +133,7 @@ export default function InicioScreen() {
 
       try {
         const respuesta = await fetch(
-          `http://10.0.2.2:3000/api/plan-diario/${id}`
+          `https://dietapp-backend.onrender.com/api/plan-diario/${id}`
         );
 
         const datos =
@@ -212,7 +212,7 @@ export default function InicioScreen() {
       setGenerando(true);
 
       const respuesta = await fetch(
-        "http://10.0.2.2:3000/api/plan-diario/generar",
+        "https://dietapp-backend.onrender.com/api/plan-diario/generar",
         {
           method: "POST",
           headers: {

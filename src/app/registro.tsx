@@ -47,7 +47,7 @@ export default function RegistroScreen() {
 
       // Enviar datos al backend
       const respuesta = await fetch(
-        "http://10.0.2.2:3000/api/registro",
+        "https://dietapp-backend.onrender.com/api/registro",
         {
           method: "POST",
           headers: {
@@ -295,4 +295,5 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
+
 

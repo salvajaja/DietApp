@@ -14,7 +14,7 @@ import {
     View
 } from "react-native";
 
-const API_URL = "http://10.0.2.2:3000";
+const API_URL = "https://dietapp-backend.onrender.com";
 
 type ComidaPlan = {
   tipo: string;
@@ -1208,3 +1208,4 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 });
+

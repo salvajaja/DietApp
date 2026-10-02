@@ -68,7 +68,7 @@ export default function LoginScreen() {
       setIniciandoSesion(true);
 
       const respuesta = await fetch(
-        "http://10.0.2.2:3000/api/login",
+        "https://dietapp-backend.onrender.com/api/login",
         {
           method: "POST",
           headers: {
@@ -334,4 +334,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
 

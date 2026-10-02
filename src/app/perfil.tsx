@@ -114,7 +114,7 @@ export default function PerfilScreen() {
       );
 
       const respuesta = await fetch(
-        `http://10.0.2.2:3000/api/perfil-completo/${usuario.id}`
+        `https://dietapp-backend.onrender.com/api/perfil-completo/${usuario.id}`
       );
 
       if (!respuesta.ok) {
@@ -1212,4 +1212,5 @@ const styles = StyleSheet.create({
     height: 30,
   },
 });
+
 

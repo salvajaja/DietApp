@@ -40,7 +40,7 @@ export default function ActividadObjetivoScreen() {
       setCargando(true);
 
       const respuesta = await fetch(
-        "http://10.0.2.2:3000/api/actividad-objetivo",
+        "https://dietapp-backend.onrender.com/api/actividad-objetivo",
         {
           method: "POST",
           headers: {
@@ -407,4 +407,5 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
+
 

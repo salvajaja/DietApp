@@ -88,7 +88,7 @@ export default function AlimentacionScreen() {
       setCargando(true);
 
       const respuesta = await fetch(
-        "http://10.0.2.2:3000/api/alimentacion",
+        "https://dietapp-backend.onrender.com/api/alimentacion",
         {
           method: "POST",
           headers: {
@@ -475,4 +475,5 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
+
 

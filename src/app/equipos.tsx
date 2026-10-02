@@ -51,7 +51,7 @@ export default function EquiposScreen() {
       setCargando(true);
 
       const respuesta = await fetch(
-        "http://10.0.2.2:3000/api/equipos",
+        "https://dietapp-backend.onrender.com/api/equipos",
         {
           method: "POST",
           headers: {
@@ -431,6 +431,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 });
+
 
 
 

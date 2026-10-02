@@ -84,7 +84,7 @@ export default function PreferenciasScreen() {
         );
 
       const respuesta = await fetch(
-        "http://10.0.2.2:3000/api/preferencias",
+        "https://dietapp-backend.onrender.com/api/preferencias",
         {
           method: "POST",
           headers: {
