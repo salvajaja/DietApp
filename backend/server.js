@@ -2146,77 +2146,238 @@ app.post(
       const nombrePlan = comidaPlan.nombre;
 
       // ============================================
-      // 7. DEFINIR INTERVALO PERMITIDO
+// 7. DEFINIR INTERVALO PERMITIDO
+// ============================================
+
+const tipoNormalizado = String(tipoComida)
+  .trim()
+  .toLowerCase();
+
+const horariosPermitidos = {
+  desayuno: {
+    inicio: 5 * 60,
+    fin: 10 * 60,
+    texto: "5:00 a. m. a 10:00 a. m.",
+  },
+  almuerzo: {
+    inicio: 12 * 60,
+    fin: 17 * 60,
+    texto: "12:00 p. m. a 5:00 p. m.",
+  },
+  cena: {
+    inicio: 18 * 60,
+    fin: 25 * 60,
+    texto: "6:00 p. m. a 1:00 a. m.",
+  },
+};
+
+const horario = horariosPermitidos[tipoNormalizado];
+
+if (!horario) {
+  return res.status(400).json({
+    mensaje:
+      "Solo se permite registrar desayuno, almuerzo o cena.",
+  });
+}
+      // ============================================
+// 8. OBTENER HORA ACTUAL DE PERÚ
+// ============================================
+
+const horaActualResult = await pool.query(`
+  SELECT TO_CHAR(
+    CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima',
+    'HH24:MI'
+  ) AS hora_actual
+`);
+
+const horaActualTexto =
+  horaActualResult.rows[0].hora_actual;
+
+const horaPlanificada = horaActualTexto;
+
+const [hora, minuto] = horaActualTexto
+  .split(":")
+  .map(Number);
+
+let minutosActuales = hora * 60 + minuto;
+
+// Si es cena y ya pasó la medianoche,
+// interpretar la hora como parte del día siguiente.
+if (
+  tipoNormalizado === "cena" &&
+  minutosActuales < 60
+) {
+  minutosActuales += 24 * 60;
+}
+
+// ============================================
+// 9. VALIDAR INTERVALO DE LA COMIDA
+// ============================================
+
+if (
+  minutosActuales < horario.inicio ||
+  minutosActuales > horario.fin
+) {
+  return res.status(400).json({
+    mensaje:
+      `No puedes registrar el ${tipoNormalizado} en este momento. ` +
+      `El horario permitido es de ${horario.texto}.`,
+    horaActual: horaActualTexto,
+    horarioPermitido: horario.texto,
+  });
+}
+      // ============================================
+      // 10. VERIFICAR LA FOTO CON IA
       // ============================================
 
-      const tipoNormalizado = String(tipoComida)
-        .trim()
-        .toLowerCase();
+      let estadoVerificacion = "pendiente";
+      let mensajeVerificacion =
+        "La foto está pendiente de verificación mediante IA.";
+      let confianza = null;
 
-      const horariosPermitidos = {
-        desayuno: {
-          inicio: 5 * 60,
-          fin: 10 * 60,
-          texto: "5:00 a. m. a 10:00 a. m.",
-        },
-        almuerzo: {
-          inicio: 12 * 60,
-          fin: 17 * 60,
-          texto: "12:00 p. m. a 5:00 p. m.",
-        },
-        cena: {
-          inicio: 18 * 60,
-          fin: 24 * 60,
-          texto: "6:00 p. m. a 12:00 p. m.",
-        },
-      };
+      try {
+        const descripcionPlan =
+          comidaPlan.descripcion || "";
 
-      const horario = horariosPermitidos[tipoNormalizado];
+        const ingredientesPlan =
+          Array.isArray(comidaPlan.ingredientes)
+            ? comidaPlan.ingredientes.join(", ")
+            : "";
 
-      if (!horario) {
-        return res.status(400).json({
-          mensaje:
-            "Solo se permite registrar desayuno, almuerzo o cena.",
-        });
+        const respuestaIA =
+          await groq.chat.completions.create({
+            model: "qwen/qwen3.6-27b",
+            temperature: 0.2,
+            max_completion_tokens: 512,
+
+            messages: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "text",
+                    text: `
+Eres el verificador visual de comidas de DietApp.
+
+Comida esperada: ${nombrePlan}
+Tipo de comida: ${tipoComida}
+Descripción del plan: ${descripcionPlan}
+Ingredientes esperados: ${ingredientesPlan}
+
+Analiza la imagen adjunta y determina:
+
+1. Si muestra comida real preparada para consumir.
+2. Si lo visible coincide razonablemente con la comida esperada.
+3. Qué alimento o preparación se observa.
+4. Tu nivel estimado de confianza entre 0 y 100.
+
+Reglas:
+- Una foto de zapatos, objetos, personas o paisajes no es una comida.
+- Si la imagen no permite identificar la comida, no confirmes la coincidencia.
+- Considera preparaciones y presentaciones visualmente equivalentes.
+- No afirmes que un ingrediente está presente si no puedes reconocerlo visualmente.
+- No inventes información que no se vea en la foto.
+- Devuelve únicamente un JSON válido con estas propiedades:
+{
+  "es_comida": true,
+  "coincide": true,
+  "confianza": 85,
+  "alimento_detectado": "Descripción breve",
+  "motivo": "Explicación breve"
+}
+`
+                  },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: foto
+                    }
+                  }
+                ]
+              }
+            ],
+
+            response_format: {
+              type: "json_object"
+            }
+          });
+
+        const textoIA =
+          respuestaIA.choices[0].message.content;
+
+        const analisis = JSON.parse(textoIA);
+
+        const esComida =
+          analisis.es_comida === true;
+
+        const coincide =
+          analisis.coincide === true;
+
+        const confianzaIA =
+          Number(analisis.confianza);
+
+        if (
+          !Number.isFinite(confianzaIA) ||
+          confianzaIA < 0 ||
+          confianzaIA > 100
+        ) {
+          throw new Error(
+            "La IA devolvió un nivel de confianza inválido."
+          );
+        }
+
+        confianza = confianzaIA;
+
+        if (
+          esComida &&
+          coincide &&
+          confianzaIA >= 70
+        ) {
+          estadoVerificacion = "verificada";
+
+          mensajeVerificacion =
+            "Comida verificada por IA. " +
+            String(
+              analisis.motivo ||
+              "La imagen coincide con el plan."
+            );
+        } else {
+          estadoVerificacion = "rechazada";
+
+          if (!esComida) {
+            mensajeVerificacion =
+              "La imagen no parece mostrar una comida. " +
+              String(analisis.motivo || "");
+          } else if (!coincide) {
+            mensajeVerificacion =
+              "La imagen no coincide con la comida del plan. " +
+              String(analisis.motivo || "");
+          } else {
+            mensajeVerificacion =
+              "La IA no alcanzó la confianza mínima para confirmar " +
+              "la comida. Puedes tomar otra foto.";
+          }
+        }
+
+        console.log(
+          `Verificación IA: ${estadoVerificacion}; confianza: ${confianza}`
+        );
+
+      } catch (errorIA) {
+        console.error(
+          "Error verificando foto con IA:",
+          errorIA.message
+        );
+
+        // Si falla la IA, la foto no se marca como verificada.
+        estadoVerificacion = "pendiente";
+        confianza = null;
+
+        mensajeVerificacion =
+          "No se pudo completar la verificación con IA. " +
+          "La foto quedó pendiente.";
       }
 
-      // ============================================
-      // 8. OBTENER HORA ACTUAL DE PERÚ
-      // ============================================
-
-      const horaActualResult = await pool.query(`
-        SELECT TO_CHAR(
-          CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima',
-          'HH24:MI'
-        ) AS hora_actual
-      `);
-
-      const horaActualTexto =
-        horaActualResult.rows[0].hora_actual;
-      const horaPlanificada = horaActualTexto;
-
-      const [hora, minuto] = horaActualTexto
-        .split(":")
-        .map(Number);
-
-      const minutosActuales = hora * 60 + minuto;
-
-      // ============================================
-      // 9. VALIDAR INTERVALO DE LA COMIDA
-      // ============================================
-
-      if (
-        minutosActuales < horario.inicio ||
-        minutosActuales > horario.fin
-      ) {
-        return res.status(400).json({
-          mensaje:
-            `No puedes registrar el ${tipoNormalizado} en este momento. ` +
-            `El horario permitido es de ${horario.texto}.`,
-          horaActual: horaActualTexto,
-          horarioPermitido: horario.texto,
-        });
-      }
 
 
       // ============================================
@@ -2258,37 +2419,27 @@ app.post(
         });
       }
 
-      // ============================================
-      // 11. GUARDAR COMIDA
-      // ============================================
-
-      const resultado =
-        await pool.query(
-          `
+      
+      const resultado = await pool.query(
+        `
           INSERT INTO comidas_registradas
-            (
-              usuario_id,
-              tipo_comida,
-              nombre,
-              hora,
-              foto_url,
-              verificacion_estado,
-              verificacion_mensaje,
-              confianza,
-              hora_registro
-            )
+          (
+            usuario_id,
+            tipo_comida,
+            nombre,
+            hora,
+            foto_url,
+            verificacion_estado,
+            verificacion_mensaje,
+            confianza,
+            hora_registro
+          )
           VALUES
-            (
-              $1,
-              $2,
-              $3,
-              $4,
-              $5,
-              'pendiente',
-              'La foto está pendiente de verificación mediante IA.',
-              NULL,
-              CURRENT_TIMESTAMP
-            )
+          (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8,
+            CURRENT_TIMESTAMP
+          )
           RETURNING
             id,
             fecha,
@@ -2301,15 +2452,19 @@ app.post(
             verificacion_mensaje,
             confianza,
             hora_registro
-          `,
-          [
-            usuarioId,
-            tipoComida,
-            nombrePlan,
-            horaPlanificada,
-            foto,
-          ]
-        );
+        `,
+        [
+          usuarioId,
+          tipoComida,
+          nombrePlan,
+          horaPlanificada,
+          foto,
+          estadoVerificacion,
+          mensajeVerificacion,
+          confianza
+        ]
+      );
+
 
       // ============================================
       // 12. RESPUESTA
