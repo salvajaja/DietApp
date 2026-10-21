@@ -2422,7 +2422,14 @@ Reglas:
       // ============================================
       // 12. GUARDAR LA COMIDA VERIFICADA O RECHAZADA
       // ============================================
-
+// Convertir la confianza a una escala de 0 a 1
+// Ejemplo: 90 pasa a 0.90; 0.9 se mantiene igual.
+const confianzaBD =
+  confianza == null
+    ? null
+    : Number(confianza) > 1
+      ? Number(confianza) / 100
+      : Number(confianza);
       const resultado = await pool.query(
         `
           INSERT INTO comidas_registradas
@@ -2457,15 +2464,15 @@ Reglas:
             hora_registro
         `,
         [
-          usuarioId,
-          tipoComida,
-          nombrePlan,
-          horaPlanificada,
-          foto,
-          estadoVerificacion,
-          mensajeVerificacion,
-          confianza
-        ]
+  usuarioId,
+  tipoComida,
+  nombrePlan,
+  horaPlanificada,
+  foto,
+  estadoVerificacion,
+  mensajeVerificacion,
+  confianzaBD
+]
       );
 
 
