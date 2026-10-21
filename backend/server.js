@@ -2193,6 +2193,7 @@ app.post(
 
       const horaActualTexto =
         horaActualResult.rows[0].hora_actual;
+      const horaPlanificada = horaActualTexto;
 
       const [hora, minuto] = horaActualTexto
         .split(":")
