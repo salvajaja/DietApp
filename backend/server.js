@@ -2138,94 +2138,85 @@ app.post(
         });
       }
 
+      
       // ============================================
       // 6. OBTENER DATOS DEL PLAN
       // ============================================
 
-      const nombrePlan =
-        comidaPlan.nombre;
-
-      const horaPlanificada =
-        String(
-          comidaPlan.hora
-        ).substring(0, 5);
+      const nombrePlan = comidaPlan.nombre;
 
       // ============================================
-      // 7. VALIDAR HORA
+      // 7. DEFINIR INTERVALO PERMITIDO
       // ============================================
 
-      const [horaPlan, minutoPlan] =
-        horaPlanificada
-          .split(":")
-          .map(Number);
+      const tipoNormalizado = String(tipoComida)
+        .trim()
+        .toLowerCase();
 
-      if (
-        Number.isNaN(horaPlan) ||
-        Number.isNaN(minutoPlan)
-      ) {
+      const horariosPermitidos = {
+        desayuno: {
+          inicio: 5 * 60,
+          fin: 10 * 60,
+          texto: "5:00 a. m. a 10:00 a. m.",
+        },
+        almuerzo: {
+          inicio: 12 * 60,
+          fin: 17 * 60,
+          texto: "12:00 p. m. a 5:00 p. m.",
+        },
+        cena: {
+          inicio: 18 * 60,
+          fin: 24 * 60,
+          texto: "6:00 p. m. a 12:00 p. m.",
+        },
+      };
+
+      const horario = horariosPermitidos[tipoNormalizado];
+
+      if (!horario) {
         return res.status(400).json({
           mensaje:
-            "La hora de la comida del plan no es válida.",
+            "Solo se permite registrar desayuno, almuerzo o cena.",
         });
       }
 
       // ============================================
-      // 8. OBTENER HORA ACTUAL DEL SERVIDOR
+      // 8. OBTENER HORA ACTUAL DE PERÚ
       // ============================================
 
-      const horaActualResult =
-        await pool.query(`
-          SELECT
-            CURRENT_TIME AS hora_actual
-        `);
+      const horaActualResult = await pool.query(`
+        SELECT TO_CHAR(
+          CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima',
+          'HH24:MI'
+        ) AS hora_actual
+      `);
 
       const horaActualTexto =
-        String(
-          horaActualResult.rows[0]
-            .hora_actual
-        ).substring(0, 5);
+        horaActualResult.rows[0].hora_actual;
 
-      const [
-        horaActualNum,
-        minutoActualNum,
-      ] =
-        horaActualTexto
-          .split(":")
-          .map(Number);
+      const [hora, minuto] = horaActualTexto
+        .split(":")
+        .map(Number);
 
-      const minutosPlan =
-        horaPlan * 60 +
-        minutoPlan;
-
-      const minutosActual =
-        horaActualNum * 60 +
-        minutoActualNum;
-
-      const diferencia =
-        minutosActual -
-        minutosPlan;
+      const minutosActuales = hora * 60 + minuto;
 
       // ============================================
-      // 9. MARGEN DE HORARIO
+      // 9. VALIDAR INTERVALO DE LA COMIDA
       // ============================================
-
-      const margenMinutos = 90;
 
       if (
-        Math.abs(
-          diferencia
-        ) > margenMinutos
+        minutosActuales < horario.inicio ||
+        minutosActuales > horario.fin
       ) {
         return res.status(400).json({
           mensaje:
-            `Esta comida no puede registrarse ahora. ` +
-            `El ${tipoComida.toLowerCase()} ` +
-            `está programado para las ${horaPlanificada}.`,
-          horaPlanificada,
-          horaActual:
-            horaActualTexto,
+            `No puedes registrar el ${tipoNormalizado} en este momento. ` +
+            `El horario permitido es de ${horario.texto}.`,
+          horaActual: horaActualTexto,
+          horarioPermitido: horario.texto,
         });
       }
+
 
       // ============================================
       // 10. EVITAR DUPLICADOS
@@ -2344,6 +2335,309 @@ app.post(
     }
   }
 );
+
+
+
+ // ============================================
+ // ACTIVIDADES FÍSICAS REGISTRADAS DEL DÍA
+ // ============================================
+
+ // Obtener actividades del usuario
+ app.get("/api/actividades/:usuarioId", async (req, res) => {
+   try {
+     const { usuarioId } = req.params;
+
+     if (!usuarioId || !Number.isInteger(Number(usuarioId))) {
+       return res.status(400).json({
+         mensaje: "ID de usuario inválido.",
+       });
+     }
+
+     const resultado = await pool.query(
+       `
+       SELECT
+         id,
+         nombre AS tipo_actividad,
+         duracion AS duracion_minutos,
+         fecha,
+         NULL::text AS hora,
+         calorias_quemadas
+       FROM ejercicios
+       WHERE usuario_id = $1
+         AND fecha = CURRENT_DATE
+       ORDER BY fecha DESC, id DESC
+       `,
+       [Number(usuarioId)]
+     );
+
+     return res.status(200).json({
+       actividades: resultado.rows,
+     });
+   } catch (error) {
+     console.error("Error obteniendo actividades:", error);
+
+     return res.status(500).json({
+       mensaje: "Error obteniendo las actividades registradas.",
+       error: error.message,
+     });
+   }
+ });
+
+ // Registrar actividad física
+ app.post("/api/actividades/registrar", async (req, res) => {
+   try {
+     const { usuarioId, tipoActividad, duracionMinutos } = req.body;
+
+     if (
+       !usuarioId ||
+       !Number.isInteger(Number(usuarioId)) ||
+       !tipoActividad ||
+       duracionMinutos === undefined ||
+       duracionMinutos === null
+     ) {
+       return res.status(400).json({
+         mensaje: "Completa el tipo de actividad y la duración.",
+       });
+     }
+
+     const actividadLimpia = String(tipoActividad).trim();
+     const minutos = Number(duracionMinutos);
+     const id = Number(usuarioId);
+
+     if (!actividadLimpia) {
+       return res.status(400).json({
+         mensaje: "Debes indicar qué actividad realizaste.",
+       });
+     }
+
+     if (!Number.isInteger(minutos) || minutos <= 0 || minutos > 1440) {
+       return res.status(400).json({
+         mensaje: "La duración debe ser un número entero entre 1 y 1440 minutos.",
+       });
+     }
+
+     const usuarioResult = await pool.query(
+       "SELECT id FROM usuarios WHERE id = $1",
+       [id]
+     );
+
+     if (usuarioResult.rows.length === 0) {
+       return res.status(404).json({
+         mensaje: "Usuario no encontrado.",
+       });
+     }
+
+     // Evitar duplicar el mismo tipo y duración el mismo día.
+     const actividadExistente = await pool.query(
+       `
+       SELECT
+         id,
+         nombre AS tipo_actividad,
+         duracion AS duracion_minutos,
+         fecha,
+         NULL::text AS hora,
+         calorias_quemadas
+       FROM ejercicios
+       WHERE usuario_id = $1
+         AND fecha = CURRENT_DATE
+         AND LOWER(nombre) = LOWER($2)
+         AND duracion = $3
+       LIMIT 1
+       `,
+       [id, actividadLimpia, minutos]
+     );
+
+     if (actividadExistente.rows.length > 0) {
+       return res.status(409).json({
+         mensaje: "Ya registraste esta actividad con esa duración hoy.",
+         actividad: actividadExistente.rows[0],
+       });
+     }
+
+     const resultado = await pool.query(
+       `
+       INSERT INTO ejercicios (
+         usuario_id,
+         nombre,
+         duracion,
+         calorias_quemadas,
+         fecha
+       )
+       VALUES ($1, $2, $3, NULL, CURRENT_DATE)
+       RETURNING
+         id,
+         nombre AS tipo_actividad,
+         duracion AS duracion_minutos,
+         fecha,
+         NULL::text AS hora,
+         calorias_quemadas
+       `,
+       [id, actividadLimpia, minutos]
+     );
+
+     return res.status(201).json({
+       mensaje: "Actividad registrada correctamente.",
+       actividad: resultado.rows[0],
+     });
+   } catch (error) {
+     console.error("Error registrando actividad:", error);
+
+     return res.status(500).json({
+       mensaje: "Error registrando la actividad.",
+       error: error.message,
+     });
+   }
+ });
+
+
+
+ // ============================================
+ // PROGRESO DEL USUARIO
+ // ============================================
+
+ app.get("/api/progreso/:usuarioId", async (req, res) => {
+   try {
+     const { usuarioId } = req.params;
+
+     if (!usuarioId || !Number.isInteger(Number(usuarioId))) {
+       return res.status(400).json({
+         mensaje: "ID de usuario inválido.",
+       });
+     }
+
+     const id = Number(usuarioId);
+
+     // Datos personales
+     const datosPersonales = await pool.query(
+       `
+       SELECT edad, sexo, peso, altura
+       FROM perfil_usuario
+       WHERE usuario_id = $1
+       LIMIT 1
+       `,
+       [id]
+     );
+
+     // Objetivo y nivel de actividad
+     const actividadObjetivo = await pool.query(
+       `
+       SELECT
+         nivel_actividad,
+         objetivo
+       FROM actividad_objetivo
+       WHERE usuario_id = $1
+       LIMIT 1
+       `,
+       [id]
+     );
+
+     // Historial de actividades físicas
+     const actividades = await pool.query(
+       `
+       SELECT
+         id,
+         nombre AS tipo_actividad,
+         duracion AS duracion_minutos,
+         fecha,
+         calorias_quemadas
+       FROM ejercicios
+       WHERE usuario_id = $1
+       ORDER BY fecha DESC, id DESC
+       `,
+       [id]
+     );
+
+     // Estadísticas acumuladas de actividad
+     const estadisticasActividad = await pool.query(
+       `
+       SELECT
+         COUNT(*)::int AS cantidad,
+         COALESCE(SUM(duracion), 0)::int AS minutos_totales,
+         COALESCE(SUM(calorias_quemadas), 0)::numeric
+           AS calorias_totales
+       FROM ejercicios
+       WHERE usuario_id = $1
+       `,
+       [id]
+     );
+
+     // Actividad registrada hoy
+     const actividadesHoy = await pool.query(
+       `
+       SELECT
+         COUNT(*)::int AS cantidad,
+         COALESCE(SUM(duracion), 0)::int AS minutos,
+         COALESCE(SUM(calorias_quemadas), 0)::numeric
+           AS calorias
+       FROM ejercicios
+       WHERE usuario_id = $1
+         AND fecha = CURRENT_DATE
+       `,
+       [id]
+     );
+
+     // Total de comidas registradas
+     const comidas = await pool.query(
+       `
+       SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (
+           WHERE LOWER(COALESCE(verificacion_estado, ''))
+             = 'verificado'
+         )::int AS verificadas
+       FROM comidas_registradas
+       WHERE usuario_id = $1
+       `,
+       [id]
+     );
+
+     // Comidas registradas hoy
+     const comidasHoy = await pool.query(
+       `
+       SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (
+           WHERE LOWER(COALESCE(verificacion_estado, ''))
+             = 'verificado'
+         )::int AS verificadas
+       FROM comidas_registradas
+       WHERE usuario_id = $1
+         AND fecha = CURRENT_DATE
+       `,
+       [id]
+     );
+
+     // Historial de peso guardado en la tabla progreso
+     const historialPeso = await pool.query(
+       `
+       SELECT id, peso, fecha
+       FROM progreso
+       WHERE usuario_id = $1
+       ORDER BY fecha DESC, id DESC
+       `,
+       [id]
+     );
+
+     return res.status(200).json({
+       datosPersonales: datosPersonales.rows[0] || null,
+       actividadObjetivo: actividadObjetivo.rows[0] || null,
+       actividades: actividades.rows,
+       estadisticasActividad: estadisticasActividad.rows[0],
+       actividadesHoy: actividadesHoy.rows[0],
+       comidas: comidas.rows[0],
+       comidasHoy: comidasHoy.rows[0],
+       historialPeso: historialPeso.rows,
+     });
+   } catch (error) {
+     console.error("Error obteniendo progreso:", error);
+
+     return res.status(500).json({
+       mensaje: "Error obteniendo el progreso del usuario.",
+       error: error.message,
+     });
+   }
+ });
+
 
 // ============================================
 // INICIAR SERVIDOR
