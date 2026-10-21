@@ -1,17 +1,18 @@
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const API_URL = "https://dietapp-backend.onrender.com";
@@ -49,6 +50,7 @@ export default function ComidasScreen() {
   const [cargando, setCargando] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [registrandoTipo, setRegistrandoTipo] = useState<string | null>(null);
+  const [verificandoTipo, setVerificandoTipo] = useState<string | null>(null);
 
   // =====================================================
   // OBTENER USUARIO
@@ -73,8 +75,6 @@ export default function ComidasScreen() {
 
       const usuarioGuardado = await AsyncStorage.getItem("usuario");
 
-      console.log("Usuario guardado:", usuarioGuardado);
-
       if (!usuarioGuardado) {
         Alert.alert(
           "Sesión no encontrada",
@@ -87,13 +87,8 @@ export default function ComidasScreen() {
 
       const usuario = JSON.parse(usuarioGuardado);
 
-      console.log("Usuario obtenido de AsyncStorage:", usuario);
-
       if (!usuario.id) {
-        Alert.alert(
-          "Error",
-          "No se encontró el ID del usuario."
-        );
+        Alert.alert("Error", "No se encontró el ID del usuario.");
         return;
       }
 
@@ -112,107 +107,57 @@ export default function ComidasScreen() {
   // CARGAR PLAN Y COMIDAS REGISTRADAS
   // =====================================================
 
-  const cargarDatos = async () => {
+  const cargarDatos = async (mostrarCarga = true) => {
     if (!usuarioId) {
       console.log("No existe usuarioId todavía.");
       return;
     }
 
     try {
-      setCargando(true);
-
-      console.log("--------------------------------------");
-      console.log("CARGANDO DATOS DE COMIDAS");
-      console.log("Usuario ID:", usuarioId);
-      console.log(
-        "URL PLAN:",
-        `${API_URL}/api/plan-diario/${usuarioId}`
-      );
-      console.log(
-        "URL COMIDAS:",
-        `${API_URL}/api/comidas/${usuarioId}`
-      );
-      console.log("--------------------------------------");
+      if (mostrarCarga) {
+        setCargando(true);
+      }
 
       const [planResponse, comidasResponse] = await Promise.all([
         fetch(`${API_URL}/api/plan-diario/${usuarioId}`),
         fetch(`${API_URL}/api/comidas/${usuarioId}`),
       ]);
 
-      console.log(
-        "Estado respuesta plan:",
-        planResponse.status
-      );
-
-      console.log(
-        "Estado respuesta comidas:",
-        comidasResponse.status
-      );
-
       const planData = await planResponse.json();
       const comidasData = await comidasResponse.json();
 
-      console.log("RESPUESTA COMPLETA DEL PLAN:");
-      console.log(JSON.stringify(planData, null, 2));
+      console.log("RESPUESTA DEL PLAN:", planData);
+      console.log("RESPUESTA DE COMIDAS:", comidasData);
 
-      console.log("RESPUESTA COMPLETA DE COMIDAS:");
-      console.log(JSON.stringify(comidasData, null, 2));
-
-      // =====================================================
-      // PROCESAR PLAN
-      // =====================================================
-
+      // Procesar plan
       if (
         planData.existe === true &&
-        planData.plan &&
-        planData.plan.contenido &&
+        planData.plan?.contenido &&
         Array.isArray(planData.plan.contenido.comidas)
       ) {
-        console.log("Plan encontrado correctamente.");
-
-        console.log(
-          "Número de comidas:",
-          planData.plan.contenido.comidas.length
-        );
-
-        setComidasPlan(
-          planData.plan.contenido.comidas
-        );
+        setComidasPlan(planData.plan.contenido.comidas);
       } else {
-        console.log("No se encontró un plan válido.");
-
         setComidasPlan([]);
       }
 
-      // =====================================================
-      // PROCESAR COMIDAS REGISTRADAS
-      // =====================================================
-
-      if (
-        comidasData &&
-        Array.isArray(comidasData.comidas)
-      ) {
+      // Procesar registros
+      if (Array.isArray(comidasData?.comidas)) {
         setRegistradas(comidasData.comidas);
-
-        console.log(
-          "Comidas registradas:",
-          comidasData.comidas.length
-        );
       } else {
         setRegistradas([]);
       }
     } catch (error) {
-      console.log(
-        "ERROR CARGANDO DATOS DE COMIDAS:",
-        error
-      );
+      console.log("ERROR CARGANDO DATOS DE COMIDAS:", error);
 
       Alert.alert(
         "Error",
         "No se pudieron cargar las comidas. Verifica que el backend esté funcionando."
       );
     } finally {
-      setCargando(false);
+      if (mostrarCarga) {
+        setCargando(false);
+      }
+
       setRefreshing(false);
     }
   };
@@ -223,22 +168,39 @@ export default function ComidasScreen() {
 
   const actualizar = () => {
     setRefreshing(true);
-    cargarDatos();
+    cargarDatos(false);
   };
 
   // =====================================================
-  // COMPROBAR SI YA ESTÁ REGISTRADA
+  // OBTENER EL REGISTRO DE UNA COMIDA
+  // =====================================================
+
+  const obtenerRegistroComida = (
+    comida: ComidaPlan
+  ): RegistroComida | undefined => {
+    return [...registradas]
+      .reverse()
+      .find(
+        (registro) =>
+          registro.tipo_comida?.toLowerCase() ===
+            comida.tipo.toLowerCase() &&
+          registro.nombre?.toLowerCase() ===
+            comida.nombre.toLowerCase()
+      );
+  };
+
+  // =====================================================
+  // COMPROBAR SI LA COMIDA ESTÁ VERIFICADA
   // =====================================================
 
   const comidaEstaRegistrada = (
     comida: ComidaPlan
   ) => {
-    return registradas.some(
-      (registro) =>
-        registro.tipo_comida.toLowerCase() ===
-          comida.tipo.toLowerCase() &&
-        registro.nombre.toLowerCase() ===
-          comida.nombre.toLowerCase()
+    const registro = obtenerRegistroComida(comida);
+
+    return (
+      registro?.verificacion_estado?.toLowerCase() ===
+      "verificada"
     );
   };
 
@@ -246,21 +208,20 @@ export default function ComidasScreen() {
   // TOMAR FOTO Y REGISTRAR COMIDA
   // =====================================================
 
-  const registrarComida = async (
-    comida: ComidaPlan
-  ) => {
+  const registrarComida = async (comida: ComidaPlan) => {
     if (!usuarioId) {
-      Alert.alert(
-        "Error",
-        "No se encontró el usuario."
-      );
+      Alert.alert("Error", "No se encontró el usuario.");
+      return;
+    }
+
+    if (registrandoTipo || verificandoTipo) {
       return;
     }
 
     if (comidaEstaRegistrada(comida)) {
       Alert.alert(
-        "Comida registrada",
-        "Esta comida ya fue registrada hoy."
+        "Comida verificada",
+        "Esta comida ya fue registrada y verificada hoy."
       );
       return;
     }
@@ -268,15 +229,7 @@ export default function ComidasScreen() {
     try {
       setRegistrandoTipo(comida.tipo);
 
-      console.log(
-        "Preparando registro de comida:",
-        comida
-      );
-
-      // =====================================================
-      // SOLICITAR PERMISO DE CÁMARA
-      // =====================================================
-
+      // Solicitar permiso de cámara
       const permiso =
         await ImagePicker.requestCameraPermissionsAsync();
 
@@ -285,44 +238,24 @@ export default function ComidasScreen() {
           "Permiso de cámara",
           "Necesitamos acceso a la cámara para tomar una foto de tu comida."
         );
-
-        setRegistrandoTipo(null);
         return;
       }
 
-      // =====================================================
-      // ABRIR CÁMARA
-      // =====================================================
+      // Abrir cámara
+      const resultado = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
+        base64: true,
+      });
 
-      const resultado =
-        await ImagePicker.launchCameraAsync({
-          mediaTypes: ["images"],
-          allowsEditing: true,
-          aspect: [4, 3],
-          quality: 0.7,
-          base64: true,
-        });
-
-      console.log(
-        "Resultado de cámara:",
-        resultado
-      );
-
-      // =====================================================
-      // USUARIO CANCELÓ
-      // =====================================================
-
+      // Usuario canceló
       if (resultado.canceled) {
-        console.log("El usuario canceló la fotografía.");
-
-        setRegistrandoTipo(null);
         return;
       }
 
-      // =====================================================
-      // VALIDAR FOTO
-      // =====================================================
-
+      // Validar foto
       const asset = resultado.assets?.[0];
 
       if (!asset) {
@@ -330,8 +263,6 @@ export default function ComidasScreen() {
           "Foto no encontrada",
           "No se pudo obtener la fotografía. Intenta nuevamente."
         );
-
-        setRegistrandoTipo(null);
         return;
       }
 
@@ -340,27 +271,12 @@ export default function ComidasScreen() {
           "Error con la fotografía",
           "No se pudo preparar la imagen para enviarla. Intenta nuevamente."
         );
-
-        setRegistrandoTipo(null);
         return;
       }
 
-      const fotoBase64 =
-        `data:image/jpeg;base64,${asset.base64}`;
+      const fotoBase64 = `data:image/jpeg;base64,${asset.base64}`;
 
-      console.log(
-        "Foto obtenida correctamente."
-      );
-
-      console.log(
-        "Tamaño aproximado de la foto:",
-        fotoBase64.length
-      );
-
-      // =====================================================
-      // CONFIRMAR FOTO
-      // =====================================================
-
+      // Confirmar fotografía
       Alert.alert(
         "Confirmar fotografía",
         `¿Deseas registrar esta foto como tu ${comida.tipo.toLowerCase()}?`,
@@ -374,20 +290,17 @@ export default function ComidasScreen() {
           },
           {
             text: "Registrar",
-            onPress: async () => {
-              await enviarRegistro(
-                comida,
-                fotoBase64
-              );
+            onPress: () => {
+              void enviarRegistro(comida, fotoBase64);
             },
           },
-        ]
+        ],
+        {
+          cancelable: false,
+        }
       );
     } catch (error) {
-      console.log(
-        "ERROR TOMANDO FOTO:",
-        error
-      );
+      console.log("ERROR TOMANDO FOTO:", error);
 
       Alert.alert(
         "Error",
@@ -399,7 +312,7 @@ export default function ComidasScreen() {
   };
 
   // =====================================================
-  // ENVIAR FOTO AL BACKEND
+  // ENVIAR FOTO Y VERIFICAR INMEDIATAMENTE CON IA
   // =====================================================
 
   const enviarRegistro = async (
@@ -408,19 +321,14 @@ export default function ComidasScreen() {
   ) => {
     if (!usuarioId) {
       setRegistrandoTipo(null);
-
-      Alert.alert(
-        "Error",
-        "No se encontró el usuario."
-      );
-
+      Alert.alert("Error", "No se encontró el usuario.");
       return;
     }
 
     try {
-      console.log(
-        "Enviando fotografía al backend..."
-      );
+      setVerificandoTipo(comida.tipo);
+
+      console.log("Enviando fotografía al backend para verificar...");
 
       const response = await fetch(
         `${API_URL}/api/comidas/registrar`,
@@ -432,52 +340,73 @@ export default function ComidasScreen() {
           body: JSON.stringify({
             usuarioId: Number(usuarioId),
             tipoComida: comida.tipo,
-            foto: foto,
+            foto,
           }),
         }
       );
 
       const data = await response.json();
 
-      console.log(
-        "Respuesta registro comida:",
-        data
-      );
+      console.log("Respuesta del backend:", data);
 
+      // El backend debe devolver un error si no pudo verificar la foto.
       if (!response.ok) {
         Alert.alert(
-          "No se pudo registrar",
-          data.mensaje ||
-            "No se pudo registrar la comida."
+          response.status === 502
+            ? "No se pudo verificar la foto"
+            : "No se pudo registrar",
+          data.mensaje || "Ocurrió un error al registrar la comida."
         );
 
-        setRegistrandoTipo(null);
         return;
       }
 
-      Alert.alert(
-        "¡Comida registrada!",
-        `${comida.tipo} registrada correctamente.\n\nLa fotografía quedó guardada y posteriormente podrá ser verificada mediante IA.`,
-        [
-          {
-            text: "OK",
-            onPress: async () => {
-              await cargarDatos();
-            },
-          },
-        ]
-      );
-    } catch (error) {
-      console.log(
-        "ERROR ENVIANDO REGISTRO:",
-        error
-      );
+      // Leer la respuesta del backend.
+      const estado = String(
+        data.verificacion?.estado ??
+          data.comida?.verificacion_estado ??
+          "pendiente"
+      ).toLowerCase();
+
+      const mensaje =
+        data.verificacion?.mensaje ??
+        data.comida?.verificacion_mensaje ??
+        data.mensaje ??
+        "No se recibió el detalle de la verificación.";
+
+      const confianza =
+        data.verificacion?.confianza ??
+        data.comida?.confianza;
+
+      // Actualizar las tarjetas sin mostrar la pantalla de carga completa.
+      await cargarDatos(false);
+
+      const titulo =
+        estado === "verificada"
+          ? "¡Comida verificada!"
+          : estado === "rechazada"
+            ? "Comida rechazada"
+            : "Verificación pendiente";
+
+      const detalleConfianza =
+        typeof confianza === "number"
+          ? `\n\nConfianza estimada por la IA: ${confianza}%`
+          : "";
 
       Alert.alert(
-        "Error",
-        "No se pudo registrar la comida. Verifica que el backend esté funcionando."
+        titulo,
+        `${mensaje}${detalleConfianza}`,
+        [{ text: "OK" }]
+      );
+    } catch (error) {
+      console.log("ERROR ENVIANDO O VERIFICANDO FOTO:", error);
+
+      Alert.alert(
+        "Error de conexión",
+        "No se pudo obtener la verificación. Comprueba tu conexión e inténtalo nuevamente."
       );
     } finally {
+      setVerificandoTipo(null);
       setRegistrandoTipo(null);
     }
   };
@@ -530,11 +459,17 @@ export default function ComidasScreen() {
     comida: ComidaPlan,
     index: number
   ) => {
-    const registrada =
-      comidaEstaRegistrada(comida);
+    const registro = obtenerRegistroComida(comida);
+    const registrada = comidaEstaRegistrada(comida);
 
     const registrando =
       registrandoTipo === comida.tipo;
+
+    const verificando =
+      verificandoTipo === comida.tipo;
+
+    const estadoRegistro =
+      registro?.verificacion_estado?.toLowerCase();
 
     const tipo = comida.tipo
       ? comida.tipo.toLowerCase()
@@ -560,13 +495,11 @@ export default function ComidasScreen() {
         style={styles.comidaCard}
         key={`${comida.tipo}-${comida.nombre}-${index}`}
       >
-        {/* HEADER */}
+        {/* ENCABEZADO */}
 
         <View style={styles.comidaHeader}>
           <View style={styles.iconoComida}>
-            <Text style={styles.iconoTexto}>
-              {icono}
-            </Text>
+            <Text style={styles.iconoTexto}>{icono}</Text>
           </View>
 
           <View style={styles.comidaTituloContainer}>
@@ -581,9 +514,7 @@ export default function ComidasScreen() {
 
           {registrada && (
             <View style={styles.registradaBadge}>
-              <Text style={styles.registradaTexto}>
-                ✓
-              </Text>
+              <Text style={styles.registradaTexto}>✓</Text>
             </View>
           )}
         </View>
@@ -606,97 +537,133 @@ export default function ComidasScreen() {
 
         {comida.ingredientes &&
           comida.ingredientes.length > 0 && (
-            <View
-              style={styles.ingredientesContainer}
-            >
+            <View style={styles.ingredientesContainer}>
               <Text style={styles.subtitulo}>
                 Ingredientes
               </Text>
 
-              {comida.ingredientes.map(
-                (ingrediente, i) => (
-                  <Text
-                    key={i}
-                    style={styles.ingrediente}
-                  >
-                    • {ingrediente}
-                  </Text>
-                )
-              )}
+              {comida.ingredientes.map((ingrediente, i) => (
+                <Text key={i} style={styles.ingrediente}>
+                  • {ingrediente}
+                </Text>
+              ))}
             </View>
           )}
 
-        {/* ESTADO */}
+        {/* RESULTADO DE VERIFICACIÓN */}
 
         {registrada ? (
           <View style={styles.estadoRegistrado}>
             <Text style={styles.estadoRegistradoTexto}>
-              ✓ Foto registrada
+              ✓ Comida verificada
             </Text>
+
+            {registro?.verificacion_mensaje ? (
+              <Text style={styles.detalleVerificacion}>
+                {registro.verificacion_mensaje}
+              </Text>
+            ) : null}
+
+            {typeof registro?.confianza === "number" ? (
+              <Text style={styles.detalleVerificacion}>
+                Confianza estimada: {registro.confianza}%
+              </Text>
+            ) : null}
           </View>
         ) : (
-          <TouchableOpacity
-            style={[
-              styles.botonRegistrar,
-              registrando &&
-                styles.botonDeshabilitado,
-            ]}
-            onPress={() =>
-              registrarComida(comida)
-            }
-            disabled={registrando}
-          >
-            {registrando ? (
-              <>
-                <ActivityIndicator
-                  size="small"
-                  color="#FFFFFF"
-                />
-
-                <Text
-                  style={[
-                    styles.botonRegistrarTexto,
-                    {
-                      marginLeft: 8,
-                    },
-                  ]}
-                >
-                  Abriendo cámara...
+          <>
+            {estadoRegistro === "rechazada" && (
+              <View style={styles.estadoRechazado}>
+                <Text style={styles.estadoRechazadoTexto}>
+                  ✕ Foto rechazada
                 </Text>
-              </>
-            ) : (
-              <Text
-                style={
-                  styles.botonRegistrarTexto
-                }
-              >
-                📷 Registrar comida
-              </Text>
+
+                <Text style={styles.detalleVerificacion}>
+                  {registro?.verificacion_mensaje ||
+                    "La imagen no coincide con el plan. Puedes intentarlo de nuevo."}
+                </Text>
+
+                {typeof registro?.confianza === "number" && (
+                  <Text style={styles.detalleVerificacion}>
+                    Confianza estimada: {registro.confianza}%
+                  </Text>
+                )}
+              </View>
             )}
-          </TouchableOpacity>
+
+            {estadoRegistro === "pendiente" && (
+              <View style={styles.estadoPendiente}>
+                <Text style={styles.estadoPendienteTexto}>
+                  Verificación pendiente
+                </Text>
+
+                <Text style={styles.detalleVerificacion}>
+                  {registro?.verificacion_mensaje ||
+                    "La fotografía todavía no ha sido verificada."}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.botonRegistrar,
+                (registrando || verificando) &&
+                  styles.botonDeshabilitado,
+              ]}
+              onPress={() => registrarComida(comida)}
+              disabled={
+                registrando ||
+                verificando ||
+                registrandoTipo !== null ||
+                verificandoTipo !== null
+              }
+            >
+              {registrando || verificando ? (
+                <>
+                  <ActivityIndicator
+                    size="small"
+                    color="#FFFFFF"
+                  />
+
+                  <Text
+                    style={[
+                      styles.botonRegistrarTexto,
+                      { marginLeft: 8 },
+                    ]}
+                  >
+                    {verificando
+                      ? "Verificando foto con IA..."
+                      : "Abriendo cámara..."}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.botonRegistrarTexto}>
+                  {estadoRegistro === "rechazada"
+                    ? "📷 Tomar otra foto"
+                    : "📷 Registrar comida"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </>
         )}
       </View>
     );
   };
 
   // =====================================================
-  // CARGANDO
+  // PANTALLA DE CARGA INICIAL
   // =====================================================
 
   if (cargando) {
     return (
       <SafeAreaView style={styles.container}>
-        <View
-          style={styles.cargandoContainer}
-        >
+        <View style={styles.cargandoContainer}>
           <ActivityIndicator
             size="large"
             color="#2196F3"
           />
 
-          <Text
-            style={styles.cargandoTexto}
-          >
+          <Text style={styles.cargandoTexto}>
             Cargando tus comidas...
           </Text>
         </View>
@@ -705,15 +672,13 @@ export default function ComidasScreen() {
   }
 
   // =====================================================
-  // PANTALLA
+  // PANTALLA PRINCIPAL
   // =====================================================
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
-        contentContainerStyle={
-          styles.scrollContent
-        }
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -721,18 +686,15 @@ export default function ComidasScreen() {
           />
         }
       >
-        {/* HEADER */}
+        {/* ENCABEZADO */}
 
         <View style={styles.header}>
           <Text style={styles.headerTitulo}>
             🍽️ Mis comidas
           </Text>
 
-          <Text
-            style={styles.headerSubtitulo}
-          >
-            Registra cada comida tomando una
-            fotografía
+          <Text style={styles.headerSubtitulo}>
+            Registra cada comida tomando una fotografía
           </Text>
         </View>
 
@@ -740,64 +702,53 @@ export default function ComidasScreen() {
 
         <View style={styles.resumenCard}>
           <View>
-            <Text
-              style={styles.resumenTitulo}
-            >
-              Comidas registradas
+            <Text style={styles.resumenTitulo}>
+              Comidas verificadas
             </Text>
 
-            <Text
-              style={styles.resumenNumero}
-            >
-              {registradas.length}
+            <Text style={styles.resumenNumero}>
+              {registradas.filter(
+                (registro) =>
+                  registro.verificacion_estado?.toLowerCase() ===
+                  "verificada"
+              ).length}
             </Text>
           </View>
 
           <View style={styles.resumenIcono}>
-            <Text
-              style={styles.resumenIconoTexto}
-            >
+            <Text style={styles.resumenIconoTexto}>
               ✓
             </Text>
           </View>
         </View>
 
-        {/* PLAN */}
+        {/* PLAN DE COMIDAS */}
 
         {comidasPlan.length === 0 ? (
           <View style={styles.vacioCard}>
-            <Text style={styles.vacioIcono}>
-              🍽️
-            </Text>
+            <Text style={styles.vacioIcono}>🍽️</Text>
 
             <Text style={styles.vacioTitulo}>
               No tienes un plan para hoy
             </Text>
 
             <Text style={styles.vacioTexto}>
-              Genera tu plan diario desde
-              Inicio para poder registrar tus
-              comidas.
+              Genera tu plan diario desde Inicio para poder
+              registrar tus comidas.
             </Text>
 
             <TouchableOpacity
               style={styles.botonInicio}
               onPress={irAInicio}
             >
-              <Text
-                style={
-                  styles.botonInicioTexto
-                }
-              >
+              <Text style={styles.botonInicioTexto}>
                 Ir a Inicio
               </Text>
             </TouchableOpacity>
           </View>
         ) : (
           <>
-            <Text
-              style={styles.seccionTitulo}
-            >
+            <Text style={styles.seccionTitulo}>
               Plan de comidas de hoy
             </Text>
 
@@ -813,11 +764,10 @@ export default function ComidasScreen() {
           </Text>
 
           <Text style={styles.infoTexto}>
-            Pulsa "Registrar comida", toma una
-            fotografía del plato y confirma el
-            registro. La fotografía se guardará
-            para la posterior verificación
-            mediante IA.
+            Pulsa "Registrar comida", toma una fotografía
+            del plato y confirma el registro. La IA analizará
+            la imagen y comprobará si coincide con tu plan.
+            Si la foto es rechazada, podrás intentarlo de nuevo.
           </Text>
         </View>
       </ScrollView>
@@ -829,66 +779,37 @@ export default function ComidasScreen() {
           style={styles.navItem}
           onPress={irAInicio}
         >
-          <Text style={styles.navIcono}>
-            🏠
-          </Text>
-
-          <Text style={styles.navTexto}>
-            Inicio
-          </Text>
+          <Text style={styles.navIcono}>🏠</Text>
+          <Text style={styles.navTexto}>Inicio</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItemActivo}
-        >
-          <Text style={styles.navIcono}>
-            🍽️
-          </Text>
-
-          <Text
-            style={styles.navTextoActivo}
-          >
-            Comidas
-          </Text>
+        <TouchableOpacity style={styles.navItemActivo}>
+          <Text style={styles.navIcono}>🍽️</Text>
+          <Text style={styles.navTextoActivo}>Comidas</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navItem}
           onPress={irAActividad}
         >
-          <Text style={styles.navIcono}>
-            🏃
-          </Text>
-
-          <Text style={styles.navTexto}>
-            Actividad
-          </Text>
+          <Text style={styles.navIcono}>🏃</Text>
+          <Text style={styles.navTexto}>Actividad</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navItem}
           onPress={irAProgreso}
         >
-          <Text style={styles.navIcono}>
-            📊
-          </Text>
-
-          <Text style={styles.navTexto}>
-            Progreso
-          </Text>
+          <Text style={styles.navIcono}>📊</Text>
+          <Text style={styles.navTexto}>Progreso</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navItem}
           onPress={irAPerfil}
         >
-          <Text style={styles.navIcono}>
-            👤
-          </Text>
-
-          <Text style={styles.navTexto}>
-            Perfil
-          </Text>
+          <Text style={styles.navIcono}>👤</Text>
+          <Text style={styles.navTexto}>Perfil</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -1064,6 +985,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#2196F3",
     borderRadius: 12,
     paddingVertical: 13,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -1077,12 +999,13 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
+    textAlign: "center",
   },
 
   estadoRegistrado: {
     backgroundColor: "#DCFCE7",
     borderRadius: 12,
-    paddingVertical: 13,
+    padding: 13,
     alignItems: "center",
   },
 
@@ -1090,6 +1013,41 @@ const styles = StyleSheet.create({
     color: "#16A34A",
     fontSize: 15,
     fontWeight: "700",
+  },
+
+  estadoRechazado: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 12,
+  },
+
+  estadoRechazadoTexto: {
+    color: "#B91C1C",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 5,
+  },
+
+  estadoPendiente: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 12,
+  },
+
+  estadoPendienteTexto: {
+    color: "#92400E",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 5,
+  },
+
+  detalleVerificacion: {
+    color: "#4B5563",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 5,
   },
 
   vacioCard: {
@@ -1208,4 +1166,3 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 });
-

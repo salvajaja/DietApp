@@ -2226,8 +2226,43 @@ if (
     horarioPermitido: horario.texto,
   });
 }
+      
       // ============================================
-      // 10. VERIFICAR LA FOTO CON IA
+      // 10. EVITAR DUPLICADOS
+      // ============================================
+
+      const comidaExistente = await pool.query(
+        `
+          SELECT
+            id,
+            fecha,
+            tipo_comida,
+            nombre,
+            hora,
+            completada,
+            verificacion_estado
+          FROM comidas_registradas
+          WHERE usuario_id = $1
+            AND fecha = CURRENT_DATE
+            AND tipo_comida = $2
+          LIMIT 1
+        `,
+        [
+          usuarioId,
+          tipoComida,
+        ]
+      );
+
+      if (comidaExistente.rows.length > 0) {
+        return res.status(409).json({
+          mensaje: "Esta comida ya fue registrada hoy.",
+          comida: comidaExistente.rows[0],
+        });
+      }
+
+
+      // ============================================
+      // 11. VERIFICAR LA FOTO CON IA
       // ============================================
 
       let estadoVerificacion = "pendiente";
@@ -2267,16 +2302,15 @@ Ingredientes esperados: ${ingredientesPlan}
 Analiza la imagen adjunta y determina:
 
 1. Si muestra comida real preparada para consumir.
-2. Si lo visible coincide razonablemente con la comida esperada.
+2. Si coincide razonablemente con la comida esperada.
 3. Qué alimento o preparación se observa.
 4. Tu nivel estimado de confianza entre 0 y 100.
 
 Reglas:
-- Una foto de zapatos, objetos, personas o paisajes no es una comida.
-- Si la imagen no permite identificar la comida, no confirmes la coincidencia.
-- Considera preparaciones y presentaciones visualmente equivalentes.
-- No afirmes que un ingrediente está presente si no puedes reconocerlo visualmente.
-- No inventes información que no se vea en la foto.
+- Objetos, zapatos, personas o paisajes no son comidas.
+- Si no puedes identificar la comida, no confirmes la coincidencia.
+- Acepta preparaciones visualmente equivalentes.
+- No inventes ingredientes ni información que no se vea.
 - Devuelve únicamente un JSON válido con estas propiedades:
 {
   "es_comida": true,
@@ -2303,7 +2337,13 @@ Reglas:
           });
 
         const textoIA =
-          respuestaIA.choices[0].message.content;
+          respuestaIA.choices?.[0]?.message?.content;
+
+        if (!textoIA) {
+          throw new Error(
+            "La IA no devolvió una respuesta."
+          );
+        }
 
         const analisis = JSON.parse(textoIA);
 
@@ -2336,7 +2376,7 @@ Reglas:
           estadoVerificacion = "verificada";
 
           mensajeVerificacion =
-            "Comida verificada por IA. " +
+            "¡Comida verificada! " +
             String(
               analisis.motivo ||
               "La imagen coincide con el plan."
@@ -2354,8 +2394,8 @@ Reglas:
               String(analisis.motivo || "");
           } else {
             mensajeVerificacion =
-              "La IA no alcanzó la confianza mínima para confirmar " +
-              "la comida. Puedes tomar otra foto.";
+              "No se alcanzó la confianza mínima para confirmar " +
+              "la comida. Intenta tomar otra foto.";
           }
         }
 
@@ -2369,57 +2409,20 @@ Reglas:
           errorIA.message
         );
 
-        // Si falla la IA, la foto no se marca como verificada.
-        estadoVerificacion = "pendiente";
-        confianza = null;
-
-        mensajeVerificacion =
-          "No se pudo completar la verificación con IA. " +
-          "La foto quedó pendiente.";
-      }
-
-
-
-      // ============================================
-      // 10. EVITAR DUPLICADOS
-      // ============================================
-
-      const comidaExistente =
-        await pool.query(
-          `
-          SELECT
-            id,
-            fecha,
-            tipo_comida,
-            nombre,
-            hora,
-            completada,
-            verificacion_estado
-          FROM comidas_registradas
-          WHERE usuario_id = $1
-            AND fecha = CURRENT_DATE
-            AND tipo_comida = $2
-          LIMIT 1
-          `,
-          [
-            usuarioId,
-            tipoComida,
-          ]
-        );
-
-      if (
-        comidaExistente.rows.length >
-        0
-      ) {
-        return res.status(409).json({
+        // Si la IA falla, no guardamos la foto como registrada.
+        return res.status(502).json({
           mensaje:
-            "Esta comida ya fue registrada hoy.",
-          comida:
-            comidaExistente.rows[0],
+            "No se pudo verificar la imagen con IA. " +
+            "La foto no se registró; inténtalo nuevamente.",
+          verificacion_estado: "pendiente",
         });
       }
 
-      
+
+      // ============================================
+      // 12. GUARDAR LA COMIDA VERIFICADA O RECHAZADA
+      // ============================================
+
       const resultado = await pool.query(
         `
           INSERT INTO comidas_registradas
@@ -2467,14 +2470,25 @@ Reglas:
 
 
       // ============================================
-      // 12. RESPUESTA
+      // 13. RESPUESTA AL FRONTEND
       // ============================================
 
-      res.status(201).json({
-        mensaje:
-          "Foto recibida correctamente. La comida quedó pendiente de verificación.",
-        comida:
-          resultado.rows[0],
+      const mensajeRespuesta =
+        estadoVerificacion === "verificada"
+          ? "¡Comida verificada! La imagen coincide con tu plan."
+          : "La imagen fue analizada, pero no se pudo confirmar " +
+            "que coincida con la comida de tu plan.";
+
+      return res.status(201).json({
+        mensaje: mensajeRespuesta,
+
+        verificacion: {
+          estado: estadoVerificacion,
+          mensaje: mensajeVerificacion,
+          confianza: confianza,
+        },
+
+        comida: resultado.rows[0],
       });
 
     } catch (error) {
@@ -2483,16 +2497,13 @@ Reglas:
         error
       );
 
-      res.status(500).json({
-        mensaje:
-          "Error registrando la comida.",
+      return res.status(500).json({
+        mensaje: "Error registrando la comida.",
         error: error.message,
       });
     }
   }
 );
-
-
 
  // ============================================
  // ACTIVIDADES FÍSICAS REGISTRADAS DEL DÍA

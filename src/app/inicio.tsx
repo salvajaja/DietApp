@@ -97,6 +97,7 @@ export default function InicioScreen() {
       }
 
       setUsuario(usuarioParseado);
+
       setUsuarioId(
         String(usuarioParseado.id)
       );
@@ -279,7 +280,7 @@ export default function InicioScreen() {
   };
 
   // ==========================================
-  // IR AL PERFIL
+  // NAVEGACIÓN
   // ==========================================
 
   const abrirPerfil = () => {
@@ -294,6 +295,63 @@ export default function InicioScreen() {
 
     router.push({
       pathname: "/perfil",
+      params: {
+        usuarioId:
+          String(usuarioId),
+      },
+    });
+  };
+
+  const abrirActividad = () => {
+    if (!usuarioId) {
+      Alert.alert(
+        "Error",
+        "No se encontró el usuario actual."
+      );
+
+      return;
+    }
+
+    router.push({
+      pathname: "/actividad",
+      params: {
+        usuarioId:
+          String(usuarioId),
+      },
+    });
+  };
+
+  const abrirProgreso = () => {
+    if (!usuarioId) {
+      Alert.alert(
+        "Error",
+        "No se encontró el usuario actual."
+      );
+
+      return;
+    }
+
+    router.push({
+      pathname: "/progreso",
+      params: {
+        usuarioId:
+          String(usuarioId),
+      },
+    });
+  };
+
+  const abrirComidas = () => {
+    if (!usuarioId) {
+      Alert.alert(
+        "Error",
+        "No se encontró el usuario actual."
+      );
+
+      return;
+    }
+
+    router.push({
+      pathname: "/comidas",
       params: {
         usuarioId:
           String(usuarioId),
@@ -764,8 +822,7 @@ export default function InicioScreen() {
                   styles.tituloRecomendacion
                 }
               >
-                💡 Recomendación de
-                DietApp
+                💡 Recomendación de DietApp
               </Text>
 
               <Text
@@ -828,13 +885,12 @@ export default function InicioScreen() {
         <View
           style={styles.acciones}
         >
+          {/* COMIDAS */}
+
           <TouchableOpacity
             style={styles.accion}
-            onPress={() =>
-              Alert.alert(
-                "Próximamente",
-                "Aquí podrás registrar tus comidas."
-              )
+            onPress={
+              abrirComidas
             }
             activeOpacity={0.8}
           >
@@ -855,13 +911,12 @@ export default function InicioScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* ACTIVIDAD */}
+
           <TouchableOpacity
             style={styles.accion}
-            onPress={() =>
-              Alert.alert(
-                "Próximamente",
-                "Aquí podrás registrar tu actividad física."
-              )
+            onPress={
+              abrirActividad
             }
             activeOpacity={0.8}
           >
@@ -919,12 +974,12 @@ export default function InicioScreen() {
           {/* COMIDAS */}
 
           <TouchableOpacity
-  style={styles.navItem}
-  onPress={() =>
-    router.push("/comidas")
-  }
-  activeOpacity={0.8}
->
+            style={styles.navItem}
+            onPress={
+              abrirComidas
+            }
+            activeOpacity={0.8}
+          >
             <Text
               style={
                 styles.navIcono
@@ -948,12 +1003,10 @@ export default function InicioScreen() {
             style={
               styles.navItem
             }
-            onPress={() =>
-              Alert.alert(
-                "Próximamente",
-                "Aquí estará tu actividad."
-              )
+            onPress={
+              abrirActividad
             }
+            activeOpacity={0.8}
           >
             <Text
               style={
@@ -978,12 +1031,10 @@ export default function InicioScreen() {
             style={
               styles.navItem
             }
-            onPress={() =>
-              Alert.alert(
-                "Próximamente",
-                "Aquí podrás ver tu progreso."
-              )
+            onPress={
+              abrirProgreso
             }
+            activeOpacity={0.8}
           >
             <Text
               style={
