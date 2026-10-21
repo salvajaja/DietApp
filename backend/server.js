@@ -2281,7 +2281,7 @@ if (
 
         const respuestaIA =
           await groq.chat.completions.create({
-            model: "qwen/qwen3.6-27b",
+            model: "qwen/qwen3.8-27b",
             temperature: 0.2,
             max_completion_tokens: 512,
 
